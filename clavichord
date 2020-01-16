@@ -1,0 +1,13 @@
+#!/bin/bash
+
+program_path=`realpath $0 | sed 's/\/clavichord$//'`
+program_name=`basename "$0"`
+program_bin_dir=`dirname $program_path`
+program_lib_dir="${program_bin_dir/\/bin/\/lib/}"
+
+if [ -f "$program_lib_dir/clavichord/play.sh" ]; then
+    source "$program_lib_dir/clavichord/play.sh";
+    play $@
+else
+    echo -e "Missing “play.sh” source file expected in:\n$program_lib_dir/clavichord/"
+fi
