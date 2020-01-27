@@ -45,14 +45,19 @@ play() {(
                 echo ""
             else
                 if [[ "$1" =~ ^-[a-zA-Z0-9_]+ ]]; then
-                    local args="${1#-}"
                     local flags=""
-                    for (( i=0; i<${#key}; i++ )); do
-                        if [ "${args:$i:1}" == "?" ]; then
-                            flags="$flags${args:$i:1}"
-                        else
-                            flags="$flags ${args:$i:1}"
-                        fi
+                    local args="${1#-}"
+                    local modifiers="";
+                    if [ "$(arg_is_optional "$args")" != "" ]; then
+                        args="$(arg_is_optional "$args")"
+                        modifiers="${modifiers}?";
+                    fi
+                    if [ "$(arg_expects_value "$args")" != "" ]; then
+                        args="$(arg_expects_value "$args")"
+                        modifiers="${modifiers}=";
+                    fi
+                    for (( i=0; i<${#args}; i++ )); do
+                        flags="$flags ${args:$i:1}${modifiers}"
                     done
                     echo "$flags"
                 else
@@ -97,7 +102,7 @@ play() {(
         for arg in "$@"; do args+=("$arg"); done
 
         for arg in $function_arguments; do
-            if [ ! "`arg_is_value "$arg"`" == "" ]; then
+            if [ "`arg_is_value "$arg"`" != "" ]; then
                 possible_arguments+=("$arg")
                 [ "`arg_is_optional "$arg"`" == "" ] && \
                     required_values=$(( 1 + ${required_values:-0} ))
@@ -107,6 +112,8 @@ play() {(
                     possible_options+=("$arg")
                 else
                     for flag in `arg_is_flag "$arg"`; do
+                        [ "$flag" == "=" ] && continue;
+                        [ "$flag" == "?" ] && continue;
                         possible_flags+=("$flag")
                     done
                 fi
