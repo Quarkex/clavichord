@@ -33,6 +33,14 @@ clavichord_mcp_arg_is_short_option(){
     [[ "$1" =~ ^-[a-zA-Z0-9_]+ ]]
 }
 
+clavichord_mcp_action_needs_confirmation(){
+    local action="$1"
+
+    [ "${action_requires_confirmation[$action]}" == true ] \
+        || { [ "${clavichord_mcp_confirm_mutating:-false}" == true ] \
+            && [ "${action_mutating[$action]}" == true ]; }
+}
+
 clavichord_mcp_tool_schema(){
     local action="$1"
     local args="${action_arguments[$action]}"
@@ -105,11 +113,16 @@ clavichord_mcp_tool_schema(){
         fi
     done
 
-    if [ "${action_requires_confirmation[$action]}" == true ]; then
+    if clavichord_mcp_action_needs_confirmation "$action"; then
         properties="$(
             jq -cn \
                 --argjson properties "$properties" \
-                '$properties + {confirm: {"type":"boolean"}}'
+                '$properties + {
+                    confirm: {
+                        type: "boolean",
+                        description: "Must be true to execute this action."
+                    }
+                }'
         )"
         required="$(
             jq -cn \
@@ -303,7 +316,19 @@ clavichord_mcp_call_tool(){
         return
     fi
 
-    if [ "${action_requires_confirmation[$name]}" == true ]; then
+    if [ "${clavichord_mcp_read_only:-false}" == true ] \
+    && [ "${action_read_only[$name]}" != true ]; then
+        clavichord_mcp_tool_result "Refusing to run '$name' because MCP read-only mode is active." true
+        return
+    fi
+
+    if [ "${clavichord_mcp_deny_destructive:-false}" == true ] \
+    && [ "${action_destructive[$name]}" == true ]; then
+        clavichord_mcp_tool_result "Refusing to run '$name' because destructive actions are denied." true
+        return
+    fi
+
+    if clavichord_mcp_action_needs_confirmation "$name"; then
         confirm="$(clavichord_mcp_arguments_boolean "$arguments_json" confirm 2>/dev/null || echo false)"
         if [ "$confirm" != true ]; then
             clavichord_mcp_tool_result "Refusing to run '$name' without confirm=true."
@@ -316,8 +341,15 @@ clavichord_mcp_call_tool(){
         return
     fi
 
-    stdout_file="$(mktemp)"
-    stderr_file="$(mktemp)"
+    stdout_file="$(mktemp)" || {
+        clavichord_mcp_tool_result "Failed to create temporary stdout file." true
+        return
+    }
+    stderr_file="$(mktemp)" || {
+        rm -f "$stdout_file"
+        clavichord_mcp_tool_result "Failed to create temporary stderr file." true
+        return
+    }
     (
         h=0
         parse_arguments "${action_arguments[$name]}" "${clavichord_mcp_argv[@]}"
@@ -331,7 +363,6 @@ clavichord_mcp_call_tool(){
 
     stdout_text="$(<"$stdout_file")"
     stderr_text="$(<"$stderr_file")"
-    rm -f "$stdout_file" "$stderr_file"
 
     output="$stdout_text"
     if [ "$stderr_text" != "" ]; then
@@ -349,6 +380,8 @@ $stderr_text"
         result="$(clavichord_mcp_tool_result "$output" true)"
     fi
     echo "$result"
+
+    rm -f "$stdout_file" "$stderr_file"
 }
 
 clavichord_mcp_send_response(){

@@ -40,10 +40,26 @@ fail(){
     echo "stderr failure" >&2
     return 7
 }
+
+set_action "touch~" "" "Touch mutable state"
+touch(){
+    echo "touch extra=$*"
+}
 ACTIONS
 
 run_mcp(){
-    "$tmp_dir/bin/testproject" mcp
+    "$tmp_dir/bin/testproject" mcp "$@"
+}
+
+call_message(){
+    local id="$1"
+    local name="$2"
+    local args="$3"
+
+    printf '{"jsonrpc":"2.0","id":%s,"method":"tools/call","params":{"name":"%s","arguments":%s}}\n' \
+        "$id" \
+        "$name" \
+        "$args"
 }
 
 messages="$(
@@ -82,6 +98,7 @@ printf "%s\n" "$messages" | jq -e -s '
         and .annotations.destructiveHint == false)
     and (.[1].result.tools[] | select(.name == "restart")
         | .inputSchema.properties.confirm.type == "boolean"
+        and .inputSchema.properties.confirm.description == "Must be true to execute this action."
         and (.inputSchema.required | index("confirm"))
         and .annotations.readOnlyHint == false
         and .annotations.destructiveHint == false)
@@ -99,5 +116,93 @@ printf "%s\n" "$messages" | jq -e -s '
     and .[6].result.isError == true
     and .[6].result.content[0].text == "Unknown tool: missing"
 ' >/dev/null
+
+read_only_messages="$(
+    {
+        printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+        call_message 2 show '{"instance":"app"}'
+        call_message 3 restart '{"instance":"app","confirm":true}'
+    } | run_mcp --read-only
+)"
+
+printf "%s\n" "$read_only_messages" | jq -e -s '
+    (.[0].result.tools | length) == 5
+    and (.[0].result.tools[] | select(.name == "restart"))
+    and .[1].result.content[0].text == "instance=app\ntail=\nv=0\nformat=\nq=\nextra="
+    and .[2].result.isError == true
+    and .[2].result.content[0].text == "Refusing to run '\''restart'\'' because MCP read-only mode is active."
+' >/dev/null
+
+deny_destructive_messages="$(
+    {
+        call_message 1 restart '{"instance":"app","confirm":true}'
+        call_message 2 fail '{"confirm":true}'
+    } | run_mcp --deny-destructive
+)"
+
+printf "%s\n" "$deny_destructive_messages" | jq -e -s '
+    .[0].result.content[0].text == "restart app"
+    and .[1].result.isError == true
+    and .[1].result.content[0].text == "Refusing to run '\''fail'\'' because destructive actions are denied."
+' >/dev/null
+
+confirm_mutating_messages="$(
+    {
+        printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+        call_message 2 touch '{}'
+        call_message 3 touch '{"confirm":true}'
+        call_message 4 restart '{"instance":"app"}'
+    } | run_mcp --confirm-mutating
+)"
+
+printf "%s\n" "$confirm_mutating_messages" | jq -e -s '
+    (.[0].result.tools[] | select(.name == "touch")
+        | .inputSchema.properties.confirm.type == "boolean"
+        and .inputSchema.properties.confirm.description == "Must be true to execute this action."
+        and (.inputSchema.required | index("confirm")))
+    and .[1].result.content[0].text == "Refusing to run '\''touch'\'' without confirm=true."
+    and .[2].result.content[0].text == "touch extra="
+    and .[3].result.content[0].text == "Refusing to run '\''restart'\'' without confirm=true."
+' >/dev/null
+
+if printf '%s\n' '{}' | run_mcp --unknown >"$tmp_dir/unknown.out" 2>"$tmp_dir/unknown.err"; then
+    echo "Unknown MCP option unexpectedly succeeded" >&2
+    exit 1
+fi
+
+if [ -s "$tmp_dir/unknown.out" ]; then
+    echo "Unknown MCP option wrote to stdout" >&2
+    exit 1
+fi
+
+if ! grep -Fx "ERROR: unknown MCP option: --unknown" "$tmp_dir/unknown.err" >/dev/null; then
+    echo "Unknown MCP option error missing" >&2
+    cat "$tmp_dir/unknown.err" >&2
+    exit 1
+fi
+
+normal_output="$("$tmp_dir/bin/testproject" show app 100 -v --format json -q quiet)"
+if [ "$normal_output" != "instance=app
+tail=100
+v=1
+format=json
+q=quiet
+extra=" ]; then
+    echo "Normal CLI parsing changed unexpectedly" >&2
+    printf "%s\n" "$normal_output" >&2
+    exit 1
+fi
+
+mcp_argument_output="$("$tmp_dir/bin/testproject" show app mcp)"
+if [ "$mcp_argument_output" != "instance=app
+tail=mcp
+v=0
+format=
+q=
+extra=" ]; then
+    echo "Normal CLI treated a later mcp argument as MCP mode" >&2
+    printf "%s\n" "$mcp_argument_output" >&2
+    exit 1
+fi
 
 echo "mcp stdio tests passed"

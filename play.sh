@@ -15,12 +15,36 @@ play() {(
     program_name="$program_name"
     program_arguments=(action_name)
     clavichord_mcp_requested=false
-    for argument in "$@"; do
-        if [ "$argument" == "mcp" ] || [ "$argument" == "--mcp" ]; then
-            clavichord_mcp_requested=true
-            break
-        fi
-    done
+    clavichord_mcp_read_only=false
+    clavichord_mcp_deny_destructive=false
+    clavichord_mcp_confirm_mutating=false
+    clavichord_mcp_options_error=""
+    if [ "${1:-}" == "mcp" ] || [ "${1:-}" == "--mcp" ]; then
+        clavichord_mcp_requested=true
+        shift
+        for argument in "$@"; do
+            case "$argument" in
+                --read-only)
+                    clavichord_mcp_read_only=true
+                    ;;
+                --deny-destructive)
+                    clavichord_mcp_deny_destructive=true
+                    ;;
+                --confirm-mutating)
+                    clavichord_mcp_confirm_mutating=true
+                    ;;
+                *)
+                    clavichord_mcp_options_error="ERROR: unknown MCP option: $argument"
+                    break
+                    ;;
+            esac
+        done
+    fi
+
+    if [ "$clavichord_mcp_options_error" != "" ]; then
+        echo "$clavichord_mcp_options_error" >&2
+        return 1
+    fi
 
     declare -a arguments
     parse_arguments(){
