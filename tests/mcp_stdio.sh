@@ -205,4 +205,44 @@ extra=" ]; then
     exit 1
 fi
 
+mkdir -p \
+    "$tmp_dir/submodule_project/bin" \
+    "$tmp_dir/submodule_project/lib/submoduleproject/actions.d" \
+    "$tmp_dir/submodule_project/vendor/clavichord/lib/clavichord"
+
+cp "$repo_root/play.sh" "$tmp_dir/submodule_project/vendor/clavichord/play.sh"
+cp "$repo_root/lib/clavichord/mcp.sh" "$tmp_dir/submodule_project/vendor/clavichord/lib/clavichord/mcp.sh"
+
+cat > "$tmp_dir/submodule_project/bin/submoduleproject" <<'SUBMODULE_BIN'
+#!/usr/bin/env bash
+program_path="$(realpath "$0")"
+program_name="$(basename "$0")"
+program_bin_dir="$(dirname "$program_path")"
+program_lib_dir="$(realpath "$program_bin_dir/../lib")"
+source "$program_bin_dir/../vendor/clavichord/play.sh"
+play "$@"
+SUBMODULE_BIN
+chmod +x "$tmp_dir/submodule_project/bin/submoduleproject"
+
+cat > "$tmp_dir/submodule_project/lib/submoduleproject/config.sh" <<'SUBMODULE_CONFIG'
+action_definitions_folder="$program_lib_dir/$program_name/actions.d"
+SUBMODULE_CONFIG
+
+cat > "$tmp_dir/submodule_project/lib/submoduleproject/actions.d/actions.sh" <<'SUBMODULE_ACTIONS'
+set_action "submodule:" "" "Submodule action"
+submodule(){ echo "submodule action"; }
+SUBMODULE_ACTIONS
+
+submodule_messages="$(
+    printf '%s\n' \
+        '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+        '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"submodule","arguments":{}}}' \
+    | "$tmp_dir/submodule_project/bin/submoduleproject" mcp
+)"
+
+printf "%s\n" "$submodule_messages" | jq -e -s '
+    (.[0].result.tools[] | select(.name == "submodule"))
+    and .[1].result.content[0].text == "submodule action"
+' >/dev/null
+
 echo "mcp stdio tests passed"

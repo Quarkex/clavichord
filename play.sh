@@ -374,11 +374,23 @@ play() {(
     declare -A action_requires_confirmation
     declare -A action_raw_names
 
-    if [[ -f "$program_lib_dir/clavichord/mcp.sh" ]]; then
+    clavichord_mcp_source=""
+    clavichord_play_source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    for source_file in \
+        "$program_lib_dir/clavichord/mcp.sh" \
+        "$clavichord_play_source_dir/lib/clavichord/mcp.sh" \
+    ; do
+        if [[ -f "$source_file" ]]; then
+            clavichord_mcp_source="$source_file"
+            break
+        fi
+    done
+
+    if [[ "$clavichord_mcp_source" != "" ]]; then
         if [ "$clavichord_mcp_requested" == true ]; then
-            source "$program_lib_dir/clavichord/mcp.sh" >&2
+            source "$clavichord_mcp_source" >&2
         else
-            source "$program_lib_dir/clavichord/mcp.sh"
+            source "$clavichord_mcp_source"
         fi
     fi
 
@@ -619,7 +631,9 @@ if [ "$clavichord_mcp_requested" == true ]; then
     if declare -F clavichord_mcp_loop >/dev/null; then
         clavichord_mcp_loop; return $?
     else
-        echo "ERROR: missing MCP adapter source file expected in: $program_lib_dir/clavichord/mcp.sh" >&2
+        echo "ERROR: missing MCP adapter source file expected in:" >&2
+        echo "$program_lib_dir/clavichord/mcp.sh" >&2
+        echo "$clavichord_play_source_dir/lib/clavichord/mcp.sh" >&2
         return 1
     fi
 fi
