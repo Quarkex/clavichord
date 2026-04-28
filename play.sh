@@ -333,9 +333,44 @@ play() {(
     declare -A help_messages
     declare -A available_actions
     declare -A action_arguments
+    declare -A action_read_only
+    declare -A action_mutating
+    declare -A action_destructive
+    declare -A action_requires_confirmation
+    declare -A action_raw_names
+
+    parse_action_metadata(){
+        ACTION_NAME="$1"
+        ACTION_READ_ONLY=false
+        ACTION_MUTATING=false
+        ACTION_DESTRUCTIVE=false
+        ACTION_REQUIRES_CONFIRMATION=false
+
+        while [[ "$ACTION_NAME" =~ [:~!\?]$ ]]; do
+            marker="${ACTION_NAME: -1}"
+            ACTION_NAME="${ACTION_NAME:0:${#ACTION_NAME}-1}"
+            case "$marker" in
+                ":")
+                    ACTION_READ_ONLY=true
+                    ;;
+                "~")
+                    ACTION_MUTATING=true
+                    ;;
+                "!")
+                    ACTION_DESTRUCTIVE=true
+                    ACTION_MUTATING=true
+                    ;;
+                "?")
+                    ACTION_REQUIRES_CONFIRMATION=true
+                    ;;
+            esac
+        done
+    }
 
     set_action(){
-        action="$1"
+        raw_action="$1"
+        parse_action_metadata "$raw_action"
+        action="$ACTION_NAME"
         shift;
         args="$1"
         shift;
@@ -348,6 +383,11 @@ play() {(
 
         available_actions["${action}"]="$one_liner"
         action_arguments["${action}"]="$args"
+        action_raw_names["${action}"]="$raw_action"
+        action_read_only["${action}"]="$ACTION_READ_ONLY"
+        action_mutating["${action}"]="$ACTION_MUTATING"
+        action_destructive["${action}"]="$ACTION_DESTRUCTIVE"
+        action_requires_confirmation["${action}"]="$ACTION_REQUIRES_CONFIRMATION"
         options_with_arguments+=(
             $(echo $args | tr " " "\n" | grep '=' | tr -d "=" | tr -d "?" )
         )
@@ -464,7 +504,7 @@ play() {(
  # Actions #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 ###########
 
-    set_action "actions" "-d"\
+    set_action "actions" "-d -m"\
     "List availible actions in this program" \
     "Usage:" \
     "  %program_name% %action_name%" \
@@ -472,12 +512,20 @@ play() {(
     "Or if you want to list actions with a short description:" \
     "  %program_name% %action_name% -d" \
     "" \
+    "Or if you want to list actions with action metadata:" \
+    "  %program_name% %action_name% -m" \
+    "" \
     ""
 
     actions(){(
         [[ "$d" -gt 0 ]] && show_description=true;
+        [[ "$m" -gt 0 ]] && show_metadata=true;
 
-        if [[ $show_description == true ]]; then
+        if [[ $show_metadata == true ]]; then
+            for action in $(printf "%s\n" "${!available_actions[@]}" | sort); do
+                echo "$action read_only=${action_read_only[$action]} mutating=${action_mutating[$action]} destructive=${action_destructive[$action]} requires_confirmation=${action_requires_confirmation[$action]}"
+            done
+        elif [[ $show_description == true ]]; then
             max_length=0
             for action in ${!available_actions[@]}; do
                 if [ ${#action} -gt $max_length ]; then

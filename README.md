@@ -86,6 +86,24 @@ and if you need to use the result of a subshell, user `%= command [args]%`.
 This variables and functions are executed after the program has fully loaded
 instead of when the action is defined.
 
+Action names may include compact suffix metadata markers for integrations
+that need to understand action safety:
+
+* `:` read-only
+* `~` mutating
+* `!` destructive, implies mutating
+* `?` requires confirmation
+
+Only suffix markers are stripped from the callable action name. For example:
+
+```
+set_action "logs:" "instance tail?" "Show logs"
+set_action "restart~?" "instance" "Restart instance"
+set_action "restore!?" "instance snapshot" "Restore snapshot"
+```
+
+These register callable actions named `logs`, `restart`, and `restore`.
+
 Possible arguments are parsed from a single string, with arguments
 separated by spaces. Arguments can be required, optional, and flags or
 long options with and without values. E.G:
