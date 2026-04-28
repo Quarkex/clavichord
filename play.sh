@@ -14,6 +14,13 @@ play() {(
 
     program_name="$program_name"
     program_arguments=(action_name)
+    clavichord_mcp_requested=false
+    for argument in "$@"; do
+        if [ "$argument" == "mcp" ] || [ "$argument" == "--mcp" ]; then
+            clavichord_mcp_requested=true
+            break
+        fi
+    done
 
     declare -a arguments
     parse_arguments(){
@@ -327,7 +334,11 @@ play() {(
     )}
 
     if [[ -f "$program_lib_dir/${program_name}/config.sh" ]]; then
-        source "$program_lib_dir/${program_name}/config.sh"
+        if [ "$clavichord_mcp_requested" == true ]; then
+            source "$program_lib_dir/${program_name}/config.sh" >&2
+        else
+            source "$program_lib_dir/${program_name}/config.sh"
+        fi
     fi
 
     declare -A help_messages
@@ -338,6 +349,14 @@ play() {(
     declare -A action_destructive
     declare -A action_requires_confirmation
     declare -A action_raw_names
+
+    if [[ -f "$program_lib_dir/clavichord/mcp.sh" ]]; then
+        if [ "$clavichord_mcp_requested" == true ]; then
+            source "$program_lib_dir/clavichord/mcp.sh" >&2
+        else
+            source "$program_lib_dir/clavichord/mcp.sh"
+        fi
+    fi
 
     parse_action_metadata(){
         ACTION_NAME="$1"
@@ -562,11 +581,23 @@ play() {(
 
      if [ -d "$action_definitions_folder" ]; then
         for action in "$action_definitions_folder"/*.sh; do
-            source "$action"
+            if [ "$clavichord_mcp_requested" == true ]; then
+                source "$action" >&2
+            else
+                source "$action"
+            fi
         done
      fi
 
 # Execute main function
 # and return the exit code
+if [ "$clavichord_mcp_requested" == true ]; then
+    if declare -F clavichord_mcp_loop >/dev/null; then
+        clavichord_mcp_loop; return $?
+    else
+        echo "ERROR: missing MCP adapter source file expected in: $program_lib_dir/clavichord/mcp.sh" >&2
+        return 1
+    fi
+fi
 parse_arguments "action_name -h?" $@
 main "${arguments[@]}"; return $?)}
