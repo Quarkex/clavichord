@@ -298,7 +298,17 @@ clavichord_mcp_tool_result(){
 clavichord_mcp_call_tool(){
     local request="$1"
     local name arguments_json confirm
-    local stdout_file stderr_file stdout_text stderr_text output exit_code result
+    local stdout_file="" stderr_file="" stdout_text stderr_text output exit_code result
+
+    clavichord_mcp_call_tool_cleanup(){
+        if [ "$stdout_file" != "" ]; then
+            rm -f "$stdout_file"
+        fi
+        if [ "$stderr_file" != "" ]; then
+            rm -f "$stderr_file"
+        fi
+    }
+    trap clavichord_mcp_call_tool_cleanup RETURN
 
     name="$(jq -er '.params.name | select(type == "string")' <<<"$request")" || {
         clavichord_mcp_tool_result "Missing tool name" true
@@ -380,8 +390,6 @@ $stderr_text"
         result="$(clavichord_mcp_tool_result "$output" true)"
     fi
     echo "$result"
-
-    rm -f "$stdout_file" "$stderr_file"
 }
 
 clavichord_mcp_send_response(){
