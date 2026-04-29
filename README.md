@@ -104,6 +104,67 @@ set_action "restore!?" "instance snapshot" "Restore snapshot"
 
 These register callable actions named `logs`, `restart`, and `restore`.
 
+MCP server mode
+---------------
+
+Clavichord projects can also be exposed as an MCP server over stdio. Start the
+linked project executable with `mcp` or `--mcp` as the first argument:
+
+```
+project mcp
+project --mcp
+```
+
+The MCP adapter reads JSON-RPC messages from stdin and writes JSON-RPC
+responses to stdout. It supports `initialize`, `tools/list`, `tools/call`, and
+the `notifications/initialized` notification. Diagnostics emitted while loading
+configuration or action files are redirected to stderr so stdout remains valid
+JSON-RPC.
+
+Configure an MCP client by pointing it at the same project executable that you
+use for the normal CLI, with `mcp` as the first argument. For example:
+
+```json
+{
+  "mcpServers": {
+    "project": {
+      "command": "/path/to/project/bin/project",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Every action registered with `set_action` is listed as an MCP tool. The action's
+one-line description becomes the tool description, and its argument declaration
+is translated into a JSON schema:
+
+* required and optional positional arguments are strings;
+* short flags and long options without values are non-negative integer counts;
+* short flags and long options with values are strings.
+
+For example, an action declared as:
+
+```
+set_action "logs:" "instance tail? -v --format=" "Show logs"
+```
+
+is exposed as a `logs` tool requiring the string argument `instance`, accepting
+optional string arguments `tail` and `format`, and accepting integer argument
+`v` to indicate how many times `-v` should be passed.
+
+The MCP server mode accepts these safety options after `mcp`:
+
+* `--read-only` refuses to run actions not marked with `:`.
+* `--deny-destructive` refuses to run actions marked with `!`.
+* `--confirm-mutating` requires actions marked with `~` to receive
+  `confirm: true`.
+
+Actions marked with `?` always require a `confirm: true` argument when called
+through MCP. This confirmation argument is added automatically to the tool
+schema for those actions, and for mutating actions when `--confirm-mutating` is
+enabled.
+
 Possible arguments are parsed from a single string, with arguments
 separated by spaces. Arguments can be required, optional, and flags or
 long options with and without values. E.G:
