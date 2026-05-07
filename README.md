@@ -160,6 +160,22 @@ The MCP server mode accepts these safety options after `mcp`:
 * `--confirm-mutating` requires actions marked with `~` to receive
   `confirm: true`.
 
+### MCP Instructions
+
+Clavichord supports an optional `MCP_INSTRUCTIONS` configuration variable. When
+set, its value is included as the `instructions` field in the MCP `initialize`
+response. This allows MCP clients (AI agents, IDEs, etc.) to receive contextual
+guidance about the server they are connecting to.
+
+Set it in any of the standard config files:
+
+```
+MCP_INSTRUCTIONS="This server manages containers on host 10.0.0.1 (production). Verify you are targeting the correct host before running destructive operations."
+```
+
+When `MCP_INSTRUCTIONS` is empty or unset, the `instructions` field is omitted
+from the initialize response.
+
 Actions marked with `?` always require a `confirm: true` argument when called
 through MCP. This confirmation argument is added automatically to the tool
 schema for those actions, and for mutating actions when `--confirm-mutating` is

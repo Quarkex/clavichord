@@ -245,4 +245,74 @@ printf "%s\n" "$submodule_messages" | jq -e -s '
     and .[1].result.content[0].text == "submodule action"
 ' >/dev/null
 
+# Test MCP_INSTRUCTIONS config variable
+mkdir -p "$tmp_dir/instructions_project/bin" \
+    "$tmp_dir/instructions_project/lib/instrproject/actions.d" \
+    "$tmp_dir/instructions_project/lib/clavichord"
+
+cp "$repo_root/play.sh" "$tmp_dir/instructions_project/lib/clavichord/play.sh"
+cp "$repo_root/config.sh" "$tmp_dir/instructions_project/lib/clavichord/config.sh"
+cp "$repo_root/lib/clavichord/mcp.sh" "$tmp_dir/instructions_project/lib/clavichord/mcp.sh"
+
+cat > "$tmp_dir/instructions_project/bin/instrproject" <<'INSTR_BIN'
+#!/usr/bin/env bash
+program_path="$(realpath "$0")"
+program_name="$(basename "$0")"
+program_bin_dir="$(dirname "$program_path")"
+program_lib_dir="$(realpath "$program_bin_dir/../lib")"
+source "$program_lib_dir/clavichord/play.sh"
+play "$@"
+INSTR_BIN
+chmod +x "$tmp_dir/instructions_project/bin/instrproject"
+
+cat > "$tmp_dir/instructions_project/lib/instrproject/config.sh" <<'INSTR_CONFIG'
+action_definitions_folder="$program_lib_dir/$program_name/actions.d"
+mcp_instructions="$(
+    get_config_value \
+        "MCP_INSTRUCTIONS" \
+        ""
+)"
+INSTR_CONFIG
+
+cat > "$tmp_dir/instructions_project/lib/instrproject/actions.d/actions.sh" <<'INSTR_ACTIONS'
+set_action "ping:" "" "Ping"
+ping(){ echo "pong"; }
+INSTR_ACTIONS
+
+# Without MCP_INSTRUCTIONS set — no instructions field
+no_instr_messages="$(
+    printf '%s\n' \
+        '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    | "$tmp_dir/instructions_project/bin/instrproject" mcp
+)"
+
+printf "%s\n" "$no_instr_messages" | jq -e -s '
+    .[0].result.instructions == null
+    or (.[0].result | has("instructions") | not)
+' >/dev/null || {
+    echo "instructions field should be absent when MCP_INSTRUCTIONS is empty" >&2
+    printf "%s\n" "$no_instr_messages" >&2
+    exit 1
+}
+
+# With MCP_INSTRUCTIONS set via config file
+mkdir -p "$HOME/.instrproject"
+echo 'MCP_INSTRUCTIONS="This server manages containers on host 10.0.0.1. Verify you are targeting the correct host before running destructive operations."' > "$HOME/.instrproject/config"
+
+instr_messages="$(
+    printf '%s\n' \
+        '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    | "$tmp_dir/instructions_project/bin/instrproject" mcp
+)"
+
+rm -rf "$HOME/.instrproject"
+
+printf "%s\n" "$instr_messages" | jq -e -s '
+    .[0].result.instructions == "This server manages containers on host 10.0.0.1. Verify you are targeting the correct host before running destructive operations."
+' >/dev/null || {
+    echo "instructions field should contain the configured MCP_INSTRUCTIONS value" >&2
+    printf "%s\n" "$instr_messages" >&2
+    exit 1
+}
+
 echo "mcp stdio tests passed"

@@ -415,18 +415,37 @@ clavichord_mcp_send_error(){
 }
 
 clavichord_mcp_initialize_result(){
-    jq -cn \
-        --arg name "$program_name" \
-        '{
-            protocolVersion: "2024-11-05",
-            capabilities: {
-                tools: {}
-            },
-            serverInfo: {
-                name: $name,
-                version: "0.1.0"
-            }
-        }'
+    local instructions="${mcp_instructions:-}"
+
+    if [ "$instructions" != "" ]; then
+        jq -cn \
+            --arg name "$program_name" \
+            --arg instructions "$instructions" \
+            '{
+                protocolVersion: "2024-11-05",
+                capabilities: {
+                    tools: {}
+                },
+                serverInfo: {
+                    name: $name,
+                    version: "0.1.0"
+                },
+                instructions: $instructions
+            }'
+    else
+        jq -cn \
+            --arg name "$program_name" \
+            '{
+                protocolVersion: "2024-11-05",
+                capabilities: {
+                    tools: {}
+                },
+                serverInfo: {
+                    name: $name,
+                    version: "0.1.0"
+                }
+            }'
+    fi
 }
 
 clavichord_mcp_loop(){
